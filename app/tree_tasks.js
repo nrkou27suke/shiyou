@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { supabase } from "./supabaseClient";
 
 /* =========================================================================
    枝葉（しよう）— 樹形図でやることを管理する
@@ -85,11 +86,25 @@ function leafStats(n) { if (isSealed(n)) return { total: 0, done: 0 }; if (n.chi
 const setAllCollapsed = (ns, v) => ns.map((n) => ({ ...n, collapsed: n.children.length ? v : n.collapsed, children: setAllCollapsed(n.children, v) }));
 const allTags = (ns, set = new Set()) => { ns.forEach((n) => { (n.tags || []).forEach((t) => set.add(t)); allTags(n.children, set); }); return set; };
 
-const KEY = "tree_tasks_v2";
-async function loadTree() { try { const v = localStorage.getItem(KEY); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
-async function saveTree(t) { try { localStorage.setItem(KEY, JSON.stringify(t)); } catch (e) {} }
+async function loadTree(userId) {
+  try {
+    const { data, error } = await supabase.from("trees").select("tree").eq("user_id", userId).maybeSingle();
+    if (error) { console.error(error); return null; }
+    return data ? data.tree : null;
+  } catch (e) { console.error(e); return null; }
+}
+async function saveTree(userId, t) {
+  try {
+    await supabase.from("trees").upsert({ user_id: userId, tree: t, updated_at: new Date().toISOString() });
+  } catch (e) { console.error(e); }
+}
 
 export default function TreeTasks() {
+  const [session, setSession] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [email, setEmail] = useState("");
+  const [authMsg, setAuthMsg] = useState("");
+  const [authSending, setAuthSending] = useState(false);
   const [tree, setTree] = useState(SEED);
   const [view, setView] = useState("tree");
   const [focusId, setFocusId] = useState(null);
@@ -104,8 +119,41 @@ export default function TreeTasks() {
   const inputs = useRef({});
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2200); };
 
-  useEffect(() => { (async () => { const t = await loadTree(); if (t && Array.isArray(t) && t.length) setTree(t); setLoaded(true); })(); }, []);
-  useEffect(() => { if (loaded) saveTree(tree); }, [tree, loaded]);
+  // ログイン状態を監視
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthChecked(true); });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => { setSession(s); });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // ログインしたら、その人の木をクラウドから読み込む
+  useEffect(() => {
+    if (!session) { setLoaded(false); return; }
+    (async () => {
+      const t = await loadTree(session.user.id);
+      if (t && Array.isArray(t) && t.length) setTree(t);
+      else { setTree(SEED); await saveTree(session.user.id, SEED); }
+      setLoaded(true);
+    })();
+  }, [session]);
+
+  // 変更をクラウドへ保存（少し待ってまとめて保存）
+  useEffect(() => {
+    if (!loaded || !session) return;
+    const id = setTimeout(() => { saveTree(session.user.id, tree); }, 600);
+    return () => clearTimeout(id);
+  }, [tree, loaded, session]);
+
+  async function sendMagicLink() {
+    const addr = email.trim();
+    if (!addr || authSending) return;
+    setAuthSending(true); setAuthMsg("");
+    const { error } = await supabase.auth.signInWithOtp({ email: addr, options: { emailRedirectTo: window.location.origin } });
+    if (error) setAuthMsg("送信できませんでした。アドレスを確認してください。");
+    else setAuthMsg("ログイン用のリンクをメールに送りました。メールを開いてリンクを押してください。");
+    setAuthSending(false);
+  }
+  async function signOut() { await supabase.auth.signOut(); setTree(SEED); setLoaded(false); }
   useEffect(() => { if (focusId && inputs.current[focusId]) { const el = inputs.current[focusId]; el.focus(); el.setSelectionRange(el.value.length, el.value.length); setFocusId(null); } }, [focusId, tree]);
 
   const visible = useMemo(() => flattenVisible(tree), [tree]);
@@ -291,6 +339,27 @@ export default function TreeTasks() {
     );
   };
 
+  if (!authChecked) {
+    return (<div className="tt-root"><style>{css}</style><div className="tt-auth"><div className="tt-auth-card"><div className="tt-auth-logo"><span className="tt-leaf-mark" />枝葉</div><p className="tt-auth-sub">読み込み中…</p></div></div></div>);
+  }
+  if (!session) {
+    return (
+      <div className="tt-root">
+        <style>{css}</style>
+        <div className="tt-auth">
+          <div className="tt-auth-card">
+            <div className="tt-auth-logo"><span className="tt-leaf-mark" />枝葉<span className="tt-auth-read">しよう</span></div>
+            <p className="tt-auth-sub">メールアドレスを入れると、ログイン用のリンクが届きます。パスワードは不要です。どの端末でも、同じ木が開きます。</p>
+            <input className="tt-auth-input" type="email" value={email} placeholder="you@example.com"
+              onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") sendMagicLink(); }} />
+            <button className="tt-auth-btn" onClick={sendMagicLink} disabled={authSending}>{authSending ? "送信中…" : "ログイン用リンクを送る"}</button>
+            {authMsg && <p className="tt-auth-msg">{authMsg}</p>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="tt-root">
       <style>{css}</style>
@@ -301,7 +370,10 @@ export default function TreeTasks() {
           <span className="tt-logo"><span className="tt-leaf-mark" />枝葉</span>
           <span className="tt-logo-read">しよう</span>
         </div>
-        <button className="tt-help" onClick={() => setHelp(true)} aria-label="使い方を見る">？</button>
+        <div className="tt-head-btns">
+          <button className="tt-help" onClick={() => setHelp(true)} aria-label="使い方を見る">？</button>
+          <button className="tt-signout" onClick={signOut} aria-label="ログアウト">ログアウト</button>
+        </div>
       </header>
 
       <div className="tt-bar">
@@ -512,6 +584,22 @@ const css = `
 .tt-modal-close{ margin-top:19px; width:100%; border:0; background:var(--ink); color:#fff; border-radius:11px; padding:12px; font-size:14px; font-weight:600; cursor:pointer; font-family:inherit; }
 .tt-modal-close:hover{ filter:brightness(1.12); }
 @keyframes fade{ from{ opacity:0; } }
+
+.tt-head-btns{ display:flex; align-items:center; gap:8px; flex:0 0 auto; }
+.tt-signout{ border:1px solid var(--line); background:var(--surface); color:var(--muted); border-radius:9px; padding:7px 12px; font-size:12px; cursor:pointer; font-family:inherit; }
+.tt-signout:hover{ border-color:var(--soon); color:var(--soon); }
+
+.tt-auth{ min-height:60vh; display:flex; align-items:center; justify-content:center; padding:20px; }
+.tt-auth-card{ background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:30px 26px; max-width:380px; width:100%; box-shadow:0 14px 44px rgba(0,0,0,.07); }
+.tt-auth-logo{ display:flex; align-items:center; gap:10px; font-size:26px; font-weight:800; letter-spacing:.05em; color:var(--ink); }
+.tt-auth-read{ font-family:ui-monospace,monospace; font-size:11px; letter-spacing:.22em; color:var(--muted); font-weight:400; }
+.tt-auth-sub{ font-size:13px; color:var(--muted); line-height:1.8; margin:14px 0 20px; }
+.tt-auth-input{ width:100%; box-sizing:border-box; border:1px solid var(--line); background:var(--paper); border-radius:11px; padding:12px 14px; font-size:15px; font-family:inherit; color:var(--ink); }
+.tt-auth-input:focus{ outline:2px solid var(--leaf-soft); border-color:var(--leaf); }
+.tt-auth-btn{ width:100%; margin-top:12px; border:0; background:var(--ink); color:#fff; border-radius:11px; padding:13px; font-size:14px; font-weight:600; cursor:pointer; font-family:inherit; }
+.tt-auth-btn:hover{ filter:brightness(1.12); }
+.tt-auth-btn:disabled{ opacity:.6; cursor:default; }
+.tt-auth-msg{ font-size:12.5px; color:var(--leaf); line-height:1.7; margin:14px 0 0; }
 
 @media (display-mode: standalone){ .tt-root{ padding-top:max(28px, env(safe-area-inset-top)); } }
 
