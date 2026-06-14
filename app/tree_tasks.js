@@ -103,6 +103,8 @@ export default function TreeTasks() {
   const [session, setSession] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [authMode, setAuthMode] = useState("signin"); // signin | signup
   const [authMsg, setAuthMsg] = useState("");
   const [authSending, setAuthSending] = useState(false);
   const [tree, setTree] = useState(SEED);
@@ -144,13 +146,20 @@ export default function TreeTasks() {
     return () => clearTimeout(id);
   }, [tree, loaded, session]);
 
-  async function sendMagicLink() {
+  async function submitAuth() {
     const addr = email.trim();
-    if (!addr || authSending) return;
+    if (!addr || !password || authSending) return;
+    if (password.length < 6) { setAuthMsg("パスワードは6文字以上にしてください。"); return; }
     setAuthSending(true); setAuthMsg("");
-    const { error } = await supabase.auth.signInWithOtp({ email: addr, options: { emailRedirectTo: window.location.origin } });
-    if (error) setAuthMsg("送信できませんでした。アドレスを確認してください。");
-    else setAuthMsg("ログイン用のリンクをメールに送りました。メールを開いてリンクを押してください。");
+    if (authMode === "signup") {
+      const { data, error } = await supabase.auth.signUp({ email: addr, password });
+      if (error) { setAuthMsg(error.message.includes("already") ? "このアドレスは登録済みです。「ログイン」に切り替えてください。" : "登録できませんでした。アドレスを確認してください。"); }
+      else if (data.session) { /* 即ログイン成功（確認メールオフ時） */ }
+      else { setAuthMsg("確認メールを送りました。メール内のリンクを押して登録を完了してください。"); }
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email: addr, password });
+      if (error) setAuthMsg("ログインできませんでした。アドレスかパスワードを確認してください。");
+    }
     setAuthSending(false);
   }
   async function signOut() { await supabase.auth.signOut(); setTree(SEED); setLoaded(false); }
@@ -349,10 +358,16 @@ export default function TreeTasks() {
         <div className="tt-auth">
           <div className="tt-auth-card">
             <div className="tt-auth-logo"><span className="tt-leaf-mark" />枝葉<span className="tt-auth-read">しよう</span></div>
-            <p className="tt-auth-sub">メールアドレスを入れると、ログイン用のリンクが届きます。パスワードは不要です。どの端末でも、同じ木が開きます。</p>
-            <input className="tt-auth-input" type="email" value={email} placeholder="you@example.com"
-              onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") sendMagicLink(); }} />
-            <button className="tt-auth-btn" onClick={sendMagicLink} disabled={authSending}>{authSending ? "送信中…" : "ログイン用リンクを送る"}</button>
+            <p className="tt-auth-sub">{authMode === "signup" ? "メールアドレスとパスワードを決めて、登録してください。どの端末でも、同じ木が開きます。" : "メールアドレスとパスワードでログインしてください。"}</p>
+            <div className="tt-auth-tabs">
+              <button className={authMode === "signin" ? "on" : ""} onClick={() => { setAuthMode("signin"); setAuthMsg(""); }}>ログイン</button>
+              <button className={authMode === "signup" ? "on" : ""} onClick={() => { setAuthMode("signup"); setAuthMsg(""); }}>新規登録</button>
+            </div>
+            <input className="tt-auth-input" type="email" value={email} placeholder="you@example.com" autoComplete="email"
+              onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitAuth(); }} />
+            <input className="tt-auth-input" type="password" value={password} placeholder="パスワード（6文字以上）" autoComplete={authMode === "signup" ? "new-password" : "current-password"}
+              onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitAuth(); }} />
+            <button className="tt-auth-btn" onClick={submitAuth} disabled={authSending}>{authSending ? "処理中…" : authMode === "signup" ? "登録してはじめる" : "ログイン"}</button>
             {authMsg && <p className="tt-auth-msg">{authMsg}</p>}
           </div>
         </div>
@@ -594,6 +609,10 @@ const css = `
 .tt-auth-logo{ display:flex; align-items:center; gap:10px; font-size:26px; font-weight:800; letter-spacing:.05em; color:var(--ink); }
 .tt-auth-read{ font-family:ui-monospace,monospace; font-size:11px; letter-spacing:.22em; color:var(--muted); font-weight:400; }
 .tt-auth-sub{ font-size:13px; color:var(--muted); line-height:1.8; margin:14px 0 20px; }
+.tt-auth-tabs{ display:flex; gap:6px; margin-bottom:12px; background:var(--paper); border-radius:11px; padding:4px; }
+.tt-auth-tabs button{ flex:1; border:0; background:transparent; color:var(--muted); border-radius:8px; padding:9px; font-size:13px; cursor:pointer; font-family:inherit; }
+.tt-auth-tabs button.on{ background:var(--surface); color:var(--ink); font-weight:700; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+.tt-auth-input + .tt-auth-input{ margin-top:10px; }
 .tt-auth-input{ width:100%; box-sizing:border-box; border:1px solid var(--line); background:var(--paper); border-radius:11px; padding:12px 14px; font-size:15px; font-family:inherit; color:var(--ink); }
 .tt-auth-input:focus{ outline:2px solid var(--leaf-soft); border-color:var(--leaf); }
 .tt-auth-btn{ width:100%; margin-top:12px; border:0; background:var(--ink); color:#fff; border-radius:11px; padding:13px; font-size:14px; font-weight:600; cursor:pointer; font-family:inherit; }
