@@ -460,7 +460,7 @@ export default function TreeTasks() {
 const css = `
 :root{
   --paper:#ECEEEA; --surface:#FBFCF9; --ink:#232622; --muted:#888E84; --line:#DDE1D8;
-  --leaf:#5B8456; --leaf-soft:rgba(91,132,86,.14); --soon:#B4623A; --branch:#A9AFA4; --branch-line:#C2CDBC;
+  --leaf:#5B8456; --leaf-soft:rgba(91,132,86,.14); --soon:#B4623A; --branch:#A9AFA4; --branch-line:#9A7B5A;
   --slow:#4A7A86; --slow-soft:rgba(74,122,134,.12);
   --w-heavy:#2B302E; --w-normal:#7C857F; --w-light:#C2C8C2;
 }
@@ -485,15 +485,15 @@ const css = `
 .tt-chip-btn.on{ background:var(--leaf-soft); border-color:var(--leaf); color:var(--leaf); }
 
 .tt-tree{ background:var(--surface); border:1px solid var(--line); border-radius:15px; padding:12px 14px; }
-.tt-children{ position:relative; margin-left:11px; padding-left:20px; }
+.tt-children{ position:relative; margin-left:11px; padding-left:21px; }
 .tt-node{ position:relative; }
-/* 親から子へ伸びる枝（縦の幹） */
-.tt-children > .tt-node::before{ content:""; position:absolute; left:-9px; top:0; bottom:0; width:1.5px; background:var(--branch-line); }
+/* 親から子へ伸びる枝（縦の幹）。太さ2.5px */
+.tt-children > .tt-node::before{ content:""; position:absolute; left:-10px; top:0; bottom:0; width:2.5px; background:var(--branch-line); }
 /* 最後の子は、枝の終わり（└）にするため幹をエルボーまでで止める */
-.tt-children > .tt-node:last-child::before{ bottom:auto; height:15px; border-bottom-left-radius:6px; }
-/* 幹から各行へ伸びる横枝（エルボー） */
-.tt-children > .tt-node::after{ content:""; position:absolute; left:-9px; top:15px; width:15px; height:1.5px; background:var(--branch-line); border-bottom-left-radius:6px; }
-.tt-row{ display:flex; align-items:center; gap:6px; padding:3px 0; border-radius:8px; }
+.tt-children > .tt-node:last-child::before{ bottom:auto; height:18px; }
+/* 幹から各行へ伸びる横枝（エルボー）。終点をマーク中央(左から約11px)に合わせる */
+.tt-children > .tt-node::after{ content:""; position:absolute; left:-10px; top:18px; width:24px; height:2.5px; background:var(--branch-line); }
+.tt-row{ position:relative; z-index:1; display:flex; align-items:center; gap:6px; padding:3px 0; border-radius:8px; }
 .tt-row.open{ background:var(--leaf-soft); }
 .tt-row.done{ opacity:.5; }
 .tt-row.future{ opacity:.5; }
