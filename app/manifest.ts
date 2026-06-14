@@ -1,0 +1,22 @@
+import type { MetadataRoute } from "next";
+
+export default function manifest(): MetadataRoute.Manifest {
+  return {
+    name: "枝葉 ── 次はなにをしよう",
+    short_name: "枝葉",
+    description:
+      "枝葉は、大きな目標から末端のタスクまでを一本の木で扱う、やることの道具です。葉が、実際にやること。",
+    start_url: "/",
+    display: "standalone",
+    background_color: "#ECEEEA",
+    theme_color: "#5B8456",
+    icons: [
+      {
+        src: "/icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any",
+      },
+    ],
+  };
+}
