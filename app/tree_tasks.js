@@ -48,25 +48,24 @@ function advance(iso, recur) {
 const isSealed = (n) => { const d = daysUntil(n.appearOn); return d != null && d > 0; };
 
 const SEED = [
-  node("仕事・プロジェクト", { children: [
-    node("企画書を仕上げる", { children: [
-      node("たたき台を書く", { energy: "heavy", estimate: "2時間" }),
-      node("要点をレビュー依頼", { energy: "light" }),
+  node("仕事", { children: [
+    node("企画を進める", { children: [
+      node("たたき台を作る", { energy: "heavy", estimate: "2時間" }),
+      node("関係者に共有する", { energy: "light" }),
     ]}),
+    node("週次の報告を出す", { deadline: isoPlus(3), energy: "normal", estimate: "30分", tags: ["定例"], recur: { every: 1, unit: "week" } }),
   ]}),
-  node("学業", { children: [
-    node("毎週の課題を提出", { deadline: isoPlus(3), energy: "normal", estimate: "1時間", tags: ["課題"], recur: { every: 1, unit: "week" } }),
-    node("期末レポート", { children: [
-      node("参考文献の本を読む", { deadline: isoPlus(50), energy: "light", pace: "slow", memo: "時間がある時に少しずつ。学期末までに読み切る。" }),
-      node("構成を考える", { energy: "normal" }),
-    ]}),
+  node("学び", { children: [
+    node("読みたい本を読む", { deadline: isoPlus(50), energy: "light", pace: "slow", memo: "時間がある時に少しずつ。" }),
+    node("オンライン講座を進める", { energy: "normal" }),
   ]}),
   node("生活", { children: [
     node("部屋を片付ける", { energy: "light", recur: { every: 1, unit: "week" } }),
+    node("買い物リスト"),
   ]}),
-  node("夏休み", { appearOn: parseDeadline("8/1").deadline, collapsed: true, children: [
+  node("旅行の計画", { appearOn: parseDeadline("8/1").deadline, collapsed: true, children: [
     node("行きたい場所を調べる"),
-    node("読みたい本を選ぶ"),
+    node("持ち物を準備する"),
   ]}),
   node("趣味"),
 ];
@@ -528,7 +527,7 @@ export default function TreeTasks() {
             <div className="tt-evt-form">
               <div>
                 <label>内容</label>
-                <input className="tt-evt-input" value={editEvt.text} placeholder="例：SPI対策" autoFocus
+                <input className="tt-evt-input" value={editEvt.text} placeholder="例：会議・勉強・運動 など" autoFocus
                   onChange={(e) => setEditEvt({ ...editEvt, text: e.target.value })}
                   onKeyDown={(e) => { if (e.key === "Enter") commitEvent(); }} />
               </div>
@@ -555,7 +554,7 @@ export default function TreeTasks() {
               <div className="tt-modal-item"><span className="tt-modal-ic">＋</span><div><b>木を作る</b><br/>「大きな目標を追加」から枝を生やし、その先に葉（タスク）を付けます。緑の葉印が付いた末端が、実際に手を動かすもの。</div></div>
               <div className="tt-modal-item"><span className="tt-modal-ic">⋯</span><div><b>整える・設定する</b><br/>各行の ⋯ から、移動・階層の上げ下げ・期限・<b>気力（重い/ふつう/軽い）</b>・<b>くりかえし</b>・<b>出現日</b>・メモ・タグ・削除。</div></div>
               <div className="tt-modal-item"><span className="tt-modal-ic">↻</span><div><b>くりかえし</b><br/>毎週の課題などに。完了する（葉をもぐ）たびに、次の期限の葉へ自動で生え直します。</div></div>
-              <div className="tt-modal-item"><span className="tt-modal-ic">🌗</span><div><b>出現日</b><br/>「8/1」と入れると、その日まで薄く表示され、当日から通常表示に。隠さないので、いつでも中身を編集できます（夏休みなど）。</div></div>
+              <div className="tt-modal-item"><span className="tt-modal-ic">🌗</span><div><b>出現日</b><br/>「8/1」と入れると、その日まで薄く表示され、当日から通常表示に。隠さないので、いつでも中身を編集できます（旅行の計画など）。</div></div>
               <div className="tt-modal-item"><span className="tt-modal-ic">🌱</span><div><b>ゆっくり進める</b><br/>急ぎではないが期日までに少しずつ進めたいもの。締切リストとは分けて、残り日数つきで並びます。</div></div>
               <div className="tt-modal-item"><span className="tt-modal-ic">✓</span><div><b>進める</b><br/>葉のチェックで完了。📅 はカレンダーに入れたら押す印。「予定に入れたが、まだやっていない」を区別できます。</div></div>
               <div className="tt-modal-item"><span className="tt-modal-ic">⇅</span><div><b>締切順で見る</b><br/>「締切順」タブで葉だけを締切順に。検索・気力・タグで絞り込めます。予定に落とすのは、あなたが。</div></div>
@@ -576,7 +575,7 @@ const css = `
   --slow:#4A7A86; --slow-soft:rgba(74,122,134,.12);
   --w-heavy:#2B302E; --w-normal:#7C857F; --w-light:#C2C8C2;
 }
-.tt-root{ font-family:'Hiragino Sans','Noto Sans JP',system-ui,-apple-system,sans-serif; color:var(--ink); background:var(--paper); padding:28px 20px 46px; border-radius:18px; -webkit-font-smoothing:antialiased; max-width:720px; margin:0 auto; position:relative; }
+.tt-root{ font-family:'Hiragino Sans','Noto Sans JP',system-ui,-apple-system,sans-serif; color:var(--ink); background:var(--paper); padding:28px 20px 46px; border-radius:18px; -webkit-font-smoothing:antialiased; max-width:720px; margin:0 auto; position:relative; box-sizing:border-box; overflow-x:hidden; }
 .tt-toast{ position:sticky; top:8px; z-index:30; margin:0 auto 10px; width:max-content; max-width:90%; background:var(--leaf); color:#fff; font-size:12.5px; padding:8px 16px; border-radius:999px; box-shadow:0 4px 14px rgba(91,132,86,.3); }
 
 .tt-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin-bottom:18px; }
@@ -806,7 +805,8 @@ const css = `
 
 /* ===== スマホ対応：横スクロールをなくし、⋯ を必ず画面内に ===== */
 @media (max-width:560px){
-  .tt-root{ padding:20px 12px 40px; }
+  .tt-root{ padding:20px 12px 40px; width:100%; max-width:100%; box-sizing:border-box; overflow-x:hidden; }
+  .tt-root--wide{ width:100%; max-width:100%; }
   /* 折り返さず1行を保つ。長いタイトルは文字側を縮める＝枝とマークが必ず揃う */
   .tt-row{ flex-wrap:nowrap; padding:4px 0; }
   .tt-title{ flex:1 1 auto; min-width:0; font-size:16px; }
