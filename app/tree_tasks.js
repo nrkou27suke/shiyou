@@ -86,16 +86,25 @@ function leafStats(n) { if (isSealed(n)) return { total: 0, done: 0 }; if (n.chi
 const setAllCollapsed = (ns, v) => ns.map((n) => ({ ...n, collapsed: n.children.length ? v : n.collapsed, children: setAllCollapsed(n.children, v) }));
 const allTags = (ns, set = new Set()) => { ns.forEach((n) => { (n.tags || []).forEach((t) => set.add(t)); allTags(n.children, set); }); return set; };
 
-async function loadTree(userId) {
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+const dateLabel = (iso) => { const [y,m,d] = iso.split("-").map(Number); const dt = new Date(y, m-1, d); return `${m}/${d}（${WEEK[dt.getDay()]}）`; };
+const shiftDate = (iso, days) => { const [y,m,d] = iso.split("-").map(Number); const dt = new Date(y, m-1, d); dt.setDate(dt.getDate()+days); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`; };
+const minToTime = (min) => `${String(Math.floor(min/60)).padStart(2,"0")}:${String(min%60).padStart(2,"0")}`;
+const timeToMin = (t) => { const [h,m] = (t||"0:0").split(":").map(Number); return (h*60)+(m||0); };
+
+async function loadData(userId) {
   try {
-    const { data, error } = await supabase.from("trees").select("tree").eq("user_id", userId).maybeSingle();
-    if (error) { console.error(error); return null; }
-    return data ? data.tree : null;
-  } catch (e) { console.error(e); return null; }
+    const { data, error } = await supabase.from("trees").select("tree, schedule").eq("user_id", userId).maybeSingle();
+    if (error) {
+      const r2 = await supabase.from("trees").select("tree").eq("user_id", userId).maybeSingle();
+      return { tree: r2.data ? r2.data.tree : null, schedule: {} };
+    }
+    return { tree: data ? data.tree : null, schedule: (data && data.schedule) ? data.schedule : {} };
+  } catch (e) { console.error(e); return { tree: null, schedule: {} }; }
 }
-async function saveTree(userId, t) {
+async function saveData(userId, t, sched) {
   try {
-    await supabase.from("trees").upsert({ user_id: userId, tree: t, updated_at: new Date().toISOString() });
+    await supabase.from("trees").upsert({ user_id: userId, tree: t, schedule: sched, updated_at: new Date().toISOString() });
   } catch (e) { console.error(e); }
 }
 
@@ -108,6 +117,9 @@ export default function TreeTasks() {
   const [authMsg, setAuthMsg] = useState("");
   const [authSending, setAuthSending] = useState(false);
   const [tree, setTree] = useState(SEED);
+  const [schedule, setSchedule] = useState({});
+  const [dayDate, setDayDate] = useState(todayISO());
+  const [editEvt, setEditEvt] = useState(null);
   const [view, setView] = useState("tree");
   const [focusId, setFocusId] = useState(null);
   const [openId, setOpenId] = useState(null);
@@ -119,6 +131,7 @@ export default function TreeTasks() {
   const [toast, setToast] = useState("");
   const [loaded, setLoaded] = useState(false);
   const inputs = useRef({});
+  const tlRef = useRef(null);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2200); };
 
   // ログイン状態を監視
@@ -132,9 +145,11 @@ export default function TreeTasks() {
   useEffect(() => {
     if (!session) { setLoaded(false); return; }
     (async () => {
-      const t = await loadTree(session.user.id);
-      if (t && Array.isArray(t) && t.length) setTree(t);
-      else { setTree(SEED); await saveTree(session.user.id, SEED); }
+      const { tree: t, schedule: sch } = await loadData(session.user.id);
+      const hasTree = t && Array.isArray(t) && t.length;
+      setTree(hasTree ? t : SEED);
+      setSchedule(sch && typeof sch === "object" ? sch : {});
+      if (!hasTree) await saveData(session.user.id, SEED, sch || {});
       setLoaded(true);
     })();
   }, [session]);
@@ -142,9 +157,12 @@ export default function TreeTasks() {
   // 変更をクラウドへ保存（少し待ってまとめて保存）
   useEffect(() => {
     if (!loaded || !session) return;
-    const id = setTimeout(() => { saveTree(session.user.id, tree); }, 600);
+    const id = setTimeout(() => { saveData(session.user.id, tree, schedule); }, 600);
     return () => clearTimeout(id);
-  }, [tree, loaded, session]);
+  }, [tree, schedule, loaded, session]);
+
+  // 日割タブを開いたら朝7時へスクロール
+  useEffect(() => { if (view === "day" && tlRef.current) tlRef.current.scrollTop = 7 * 60; }, [view, dayDate]);
 
   async function submitAuth() {
     const addr = email.trim();
@@ -214,6 +232,13 @@ export default function TreeTasks() {
   const outdent = (id) => setTree((t) => outdentNode(t, id));
 
   const tagsList = useMemo(() => [...allTags(tree)], [tree]);
+
+  const dayEvents = (schedule[dayDate] || []).slice().sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
+  function upsertEvent(ev) { setSchedule((sc) => { const list = (sc[dayDate] || []).filter((e) => e.id !== ev.id); return { ...sc, [dayDate]: [...list, ev] }; }); }
+  function removeEvent(id) { setSchedule((sc) => ({ ...sc, [dayDate]: (sc[dayDate] || []).filter((e) => e.id !== id) })); }
+  function openNewEvent(startMin, text) { const sM = startMin != null ? startMin : 9 * 60; setEditEvt({ id: uid(), start: minToTime(sM), end: minToTime(Math.min(sM + 30, 24 * 60)), text: text || "", isNew: true }); }
+  function commitEvent() { if (!editEvt) return; let a = timeToMin(editEvt.start), b = timeToMin(editEvt.end); if (b <= a) b = Math.min(a + 15, 24 * 60); upsertEvent({ id: editEvt.id, start: minToTime(a), end: minToTime(b), text: (editEvt.text || "").trim() }); setEditEvt(null); }
+  function toggleEvtCal(ev) { upsertEvent({ ...ev, cal: !ev.cal }); }
 
   const Drawer = ({ n }) => (
     <div className="tt-drawer">
@@ -398,7 +423,7 @@ export default function TreeTasks() {
   }
 
   return (
-    <div className="tt-root">
+    <div className={`tt-root${view === "day" ? " tt-root--wide" : ""}`}>
       <style>{css}</style>
       {toast && <div className="tt-toast">{toast}</div>}
 
@@ -417,6 +442,7 @@ export default function TreeTasks() {
         <div className="tt-toggle">
           <button className={view === "tree" ? "on" : ""} onClick={() => setView("tree")}>ツリー</button>
           <button className={view === "due" ? "on" : ""} onClick={() => setView("due")}>締切順</button>
+          <button className={view === "day" ? "on" : ""} onClick={() => setView("day")}>日割</button>
         </div>
         <div className="tt-bar-actions">
           <button className={`tt-chip-btn${hideDone ? " on" : ""}`} onClick={() => setHideDone((v) => !v)}>完了を隠す</button>
@@ -432,7 +458,7 @@ export default function TreeTasks() {
           {tree.map(renderNode)}
           <button className="tt-addroot" onClick={addRoot}>＋ 大きな目標を追加</button>
         </div>
-      ) : (
+      ) : view === "due" ? (
         <div className="tt-due">
           <div className="tt-search">
             <input className="tt-search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="葉を検索（名前・メモ・タグ・場所）" />
@@ -453,6 +479,70 @@ export default function TreeTasks() {
           {noted.length > 0 && <div className="tt-due-group"><div className="tt-due-cap">日付未定（急ぎ含む）</div>{noted.map((l) => <LeafRow key={l.node.id} l={l} />)}</div>}
           {none.length > 0 && <div className="tt-due-group tt-due-group--quiet"><div className="tt-due-cap">締切なし</div>{none.map((l) => <LeafRow key={l.node.id} l={l} />)}</div>}
           {(dated.length > 0 || slow.length > 0) && <p className="tt-tip">この順で見て、いつやるかは自分でカレンダーに落としてください。</p>}
+        </div>
+      ) : (
+        <div className="tt-day">
+          <div className="tt-day-head">
+            <button className="tt-day-nav" onClick={() => setDayDate(shiftDate(dayDate, -1))} aria-label="前の日">‹</button>
+            <button className="tt-day-today" onClick={() => setDayDate(todayISO())}>{dateLabel(dayDate)}{dayDate === todayISO() && <span className="tt-day-istoday">今日</span>}</button>
+            <button className="tt-day-nav" onClick={() => setDayDate(shiftDate(dayDate, 1))} aria-label="次の日">›</button>
+            <button className="tt-day-add" onClick={() => openNewEvent(null)}>＋ 予定を追加</button>
+          </div>
+          <div className="tt-day-split">
+          <div className="tt-day-side">
+            <div className="tt-day-side-cap">タスク（ここでも完了・📅・編集ができます）</div>
+            <div className="tt-tree tt-tree--side">
+              {tree.map(renderNode)}
+              <button className="tt-addroot" onClick={addRoot}>＋ 大きな目標を追加</button>
+            </div>
+          </div>
+          <div className="tt-timeline-wrap" ref={tlRef}>
+            <div className="tt-timeline">
+              {Array.from({ length: 24 }).map((_, h) => (
+                <div className="tt-hour" key={h} style={{ top: `${h * 60}px` }}><span className="tt-hour-label">{String(h).padStart(2, "0")}:00</span></div>
+              ))}
+              {Array.from({ length: 96 }).map((_, i) => (
+                <button className="tt-slot" key={i} style={{ top: `${i * 15}px` }} onClick={() => openNewEvent(i * 15)} aria-label={`${minToTime(i * 15)}に追加`} />
+              ))}
+              {dayDate === todayISO() && (() => { const now = new Date(); const nm = now.getHours() * 60 + now.getMinutes(); return <div className="tt-now" style={{ top: `${nm}px` }} />; })()}
+              {dayEvents.map((ev) => { const a = timeToMin(ev.start), b = timeToMin(ev.end); return (
+                <div className={`tt-evt${ev.cal ? " cal" : ""}`} key={ev.id} style={{ top: `${a}px`, height: `${Math.max(b - a, 15)}px` }} onClick={() => setEditEvt({ ...ev, isNew: false })}>
+                  <button className={`tt-evt-cal${ev.cal ? " on" : ""}`} onClick={(e) => { e.stopPropagation(); toggleEvtCal(ev); }} title={ev.cal ? "カレンダー登録済み" : "カレンダーに入れたら押す"}>📅</button>
+                  <span className="tt-evt-body">
+                    <span className="tt-evt-time">{ev.start}–{ev.end}{ev.cal ? " ・登録済み" : ""}</span>
+                    <span className="tt-evt-text">{ev.text || "（無題）"}</span>
+                  </span>
+                </div>
+              ); })}
+            </div>
+          </div>
+          </div>
+          <p className="tt-tip">左の木のタスクをタップすると予定名に入ります。枠タップか「＋ 予定を追加」で時間を決めて作成。</p>
+        </div>
+      )}
+
+      {editEvt && (
+        <div className="tt-modal" onClick={() => setEditEvt(null)}>
+          <div className="tt-modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2 className="tt-modal-title">{editEvt.isNew ? "予定を追加" : "予定を編集"}</h2>
+            <div className="tt-evt-form">
+              <div>
+                <label>内容</label>
+                <input className="tt-evt-input" value={editEvt.text} placeholder="例：SPI対策" autoFocus
+                  onChange={(e) => setEditEvt({ ...editEvt, text: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === "Enter") commitEvent(); }} />
+              </div>
+              <div className="tt-evt-times">
+                <div><label>開始</label><input type="time" step="900" value={editEvt.start} onChange={(e) => setEditEvt({ ...editEvt, start: e.target.value })} /></div>
+                <div><label>終了</label><input type="time" step="900" value={editEvt.end} onChange={(e) => setEditEvt({ ...editEvt, end: e.target.value })} /></div>
+              </div>
+            </div>
+            <div className="tt-evt-acts">
+              {!editEvt.isNew && <button className="tt-evt-del" onClick={() => { removeEvent(editEvt.id); setEditEvt(null); }}>削除</button>}
+              <button className="tt-evt-cancel" onClick={() => setEditEvt(null)}>キャンセル</button>
+              <button className="tt-evt-save" onClick={commitEvent}>保存</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -649,6 +739,67 @@ const css = `
 .tt-auth-btn:hover{ filter:brightness(1.12); }
 .tt-auth-btn:disabled{ opacity:.6; cursor:default; }
 .tt-auth-msg{ font-size:12.5px; color:var(--leaf); line-height:1.7; margin:14px 0 0; }
+
+/* ===== 日割（24時間タイムライン） ===== */
+.tt-day{ display:flex; flex-direction:column; gap:12px; }
+.tt-day-head{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.tt-day-nav{ width:34px; height:34px; border:1px solid var(--line); background:var(--surface); border-radius:9px; cursor:pointer; font-size:17px; color:var(--ink); line-height:1; }
+.tt-day-nav:hover{ border-color:var(--leaf); }
+.tt-day-today{ border:1px solid var(--line); background:var(--surface); border-radius:9px; padding:8px 14px; font-size:14px; font-weight:600; cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:8px; color:var(--ink); }
+.tt-day-istoday{ font-size:10px; color:var(--leaf); background:var(--leaf-soft); border-radius:999px; padding:2px 7px; }
+.tt-day-add{ margin-left:auto; border:0; background:var(--ink); color:#fff; border-radius:9px; padding:9px 14px; font-size:13px; cursor:pointer; font-family:inherit; }
+.tt-day-add:hover{ filter:brightness(1.12); }
+.tt-day-split{ display:flex; gap:14px; align-items:flex-start; }
+.tt-day-side{ flex:0 0 360px; max-height:72vh; overflow-y:auto; overflow-x:hidden; border:1px solid var(--line); border-radius:14px; background:var(--surface); padding:14px 16px; }
+.tt-day-side-cap{ font-family:ui-monospace,monospace; font-size:10px; letter-spacing:.06em; color:var(--muted); margin-bottom:8px; }
+.tt-snode{ }
+.tt-schildren{ margin-left:7px; padding-left:11px; border-left:1px solid var(--line); }
+.tt-srow{ display:flex; align-items:center; gap:7px; padding:4px 4px; border-radius:6px; }
+.tt-srow.branch{ font-weight:700; font-size:13px; color:var(--ink); }
+.tt-srow.leaf{ font-size:12.5px; color:var(--ink); cursor:pointer; }
+.tt-srow.leaf:hover{ background:var(--leaf-soft); }
+.tt-sdot{ flex:0 0 auto; width:7px; height:7px; border-radius:0 50% 50% 50%; background:var(--leaf); transform:rotate(45deg); }
+.tt-stitle{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tt-root--wide{ max-width:96vw; }
+.tt-day-side{ }
+.tt-tree--side{ border:0; padding:0; background:transparent; }
+.tt-tree--side .tt-row{ flex-wrap:nowrap; }
+.tt-tree--side .tt-title{ min-width:0; }
+.tt-tree--side .tt-tags, .tt-tree--side .tt-memo-dot, .tt-tree--side .tt-prog{ display:none; }
+.tt-timeline-wrap{ flex:1 1 auto; min-width:0; max-height:72vh; overflow-y:auto; border:1px solid var(--line); border-radius:14px; background:var(--surface); }
+@media (max-width:760px){
+  .tt-day-side{ display:none; }
+  .tt-timeline-wrap{ width:100%; }
+}
+.tt-timeline{ position:relative; height:1440px; margin:0 8px 0 50px; }
+.tt-hour{ position:absolute; left:0; right:0; height:0; border-top:1px solid var(--line); }
+.tt-hour-label{ position:absolute; left:-48px; top:-7px; font-family:ui-monospace,monospace; font-size:10px; color:var(--muted); }
+.tt-slot{ position:absolute; left:0; right:0; height:15px; border:0; background:transparent; cursor:pointer; padding:0; }
+.tt-slot:hover{ background:var(--leaf-soft); }
+.tt-now{ position:absolute; left:0; right:0; height:0; border-top:2px solid var(--soon); z-index:3; }
+.tt-now::before{ content:""; position:absolute; left:-4px; top:-4px; width:7px; height:7px; border-radius:50%; background:var(--soon); }
+.tt-evt{ position:absolute; left:2px; right:8px; background:var(--leaf-soft); border:1px solid var(--leaf); border-left:3px solid var(--leaf); border-radius:7px; padding:2px 6px 2px 8px; text-align:left; cursor:pointer; overflow:hidden; z-index:2; font-family:inherit; display:flex; align-items:flex-start; gap:4px; }
+.tt-evt:hover{ filter:brightness(.98); }
+.tt-evt.cal{ background:var(--surface); border-style:dashed; }
+.tt-evt-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.tt-evt-time{ font-family:ui-monospace,monospace; font-size:10px; color:var(--leaf); white-space:nowrap; }
+.tt-evt-text{ font-size:12.5px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tt-evt-cal{ flex:0 0 auto; border:0; background:transparent; cursor:pointer; font-size:12px; line-height:1; padding:1px; border-radius:5px; filter:grayscale(1) opacity(.5); }
+.tt-evt-cal:hover{ filter:grayscale(.3) opacity(.85); }
+.tt-evt-cal.on{ filter:none; }
+
+/* 予定エディタ */
+.tt-evt-form{ display:flex; flex-direction:column; gap:12px; margin:6px 0 2px; }
+.tt-evt-form label{ font-family:ui-monospace,monospace; font-size:10px; letter-spacing:.1em; color:var(--muted); display:block; margin-bottom:5px; }
+.tt-evt-input{ width:100%; box-sizing:border-box; border:1px solid var(--line); background:var(--surface); border-radius:9px; padding:10px 12px; font-size:14px; font-family:inherit; color:var(--ink); }
+.tt-evt-input:focus{ outline:2px solid var(--leaf-soft); border-color:var(--leaf); }
+.tt-evt-times{ display:flex; gap:10px; }
+.tt-evt-times > div{ flex:1; }
+.tt-evt-times input{ width:100%; box-sizing:border-box; border:1px solid var(--line); background:var(--surface); border-radius:9px; padding:9px 10px; font-size:14px; font-family:inherit; color:var(--ink); }
+.tt-evt-acts{ display:flex; gap:8px; margin-top:16px; }
+.tt-evt-save{ flex:1; border:0; background:var(--ink); color:#fff; border-radius:10px; padding:11px; font-size:14px; font-weight:600; cursor:pointer; font-family:inherit; }
+.tt-evt-cancel{ border:1px solid var(--line); background:var(--surface); color:var(--muted); border-radius:10px; padding:11px 16px; font-size:14px; cursor:pointer; font-family:inherit; }
+.tt-evt-del{ border:1px solid var(--soon); background:transparent; color:var(--soon); border-radius:10px; padding:11px 16px; font-size:14px; cursor:pointer; font-family:inherit; }
 
 @media (display-mode: standalone){ .tt-root{ padding-top:max(28px, env(safe-area-inset-top)); } }
 
