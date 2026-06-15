@@ -132,6 +132,16 @@ export default function TreeTasks() {
   const inputs = useRef({});
   const tlRef = useRef(null);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2200); };
+  async function shareApp() {
+    const url = "https://shiyou-lake.vercel.app";
+    const text = "樹形図のようなタスク管理アプリ『枝葉』";
+    if (navigator.share) {
+      try { await navigator.share({ title: "枝葉", text, url }); return; }
+      catch (e) { if (e && e.name === "AbortError") return; }
+    }
+    try { await navigator.clipboard.writeText(`${text} ${url}`); flash("リンクをコピーしました"); }
+    catch (e) { flash(url); }
+  }
 
   // ログイン状態を監視
   useEffect(() => {
@@ -432,6 +442,9 @@ export default function TreeTasks() {
           <span className="tt-logo-read">しよう</span>
         </div>
         <div className="tt-head-btns">
+          <button className="tt-share" onClick={shareApp} aria-label="友達に教える" title="友達に教える">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13" /><path d="M22 2 15 22l-4-9-9-4 20-7Z" /></svg>
+          </button>
           <button className="tt-help" onClick={() => setHelp(true)} aria-label="使い方を見る">？</button>
           <button className="tt-signout" onClick={signOut} aria-label="ログアウト">ログアウト</button>
         </div>
@@ -584,6 +597,8 @@ const css = `
 .tt-leaf-mark{ width:13px; height:13px; border-radius:0 50% 50% 50%; background:var(--leaf); transform:rotate(45deg); display:inline-block; }
 .tt-logo-read{ font-family:ui-monospace,monospace; font-size:11px; letter-spacing:.22em; color:var(--muted); }
 .tt-help{ flex:0 0 auto; width:32px; height:32px; border:1px solid var(--line); background:var(--surface); color:var(--muted); border-radius:50%; cursor:pointer; font-size:14px; line-height:1; }
+.tt-share{ flex:0 0 auto; width:32px; height:32px; border:1px solid var(--line); background:var(--surface); color:var(--muted); border-radius:50%; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; padding:0; }
+.tt-share:hover{ color:var(--leaf); border-color:var(--leaf); }
 .tt-help:hover{ border-color:var(--leaf); color:var(--leaf); }
 
 .tt-bar{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; margin-bottom:14px; }
