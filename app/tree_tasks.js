@@ -24,7 +24,7 @@ const UNIT_JP = { day: "日", week: "週", month: "月" };
 const node = (title, o = {}) => ({
   id: uid(), title, deadline: o.deadline || null, deadlineNote: o.deadlineNote || null,
   done: false, scheduled: false, collapsed: o.collapsed || false, memo: o.memo || "", tags: o.tags || [],
-  energy: o.energy || null, pace: o.pace || "normal", recur: o.recur || null, appearOn: o.appearOn || null,
+  energy: o.energy || null, estimate: o.estimate || "", pace: o.pace || "normal", recur: o.recur || null, appearOn: o.appearOn || null,
   children: o.children || [],
 });
 
@@ -50,12 +50,12 @@ const isSealed = (n) => { const d = daysUntil(n.appearOn); return d != null && d
 const SEED = [
   node("仕事・プロジェクト", { children: [
     node("企画書を仕上げる", { children: [
-      node("たたき台を書く", { energy: "heavy" }),
+      node("たたき台を書く", { energy: "heavy", estimate: "2時間" }),
       node("要点をレビュー依頼", { energy: "light" }),
     ]}),
   ]}),
   node("学業", { children: [
-    node("毎週の課題を提出", { deadline: isoPlus(3), energy: "normal", tags: ["課題"], recur: { every: 1, unit: "week" } }),
+    node("毎週の課題を提出", { deadline: isoPlus(3), energy: "normal", estimate: "1時間", tags: ["課題"], recur: { every: 1, unit: "week" } }),
     node("期末レポート", { children: [
       node("参考文献の本を読む", { deadline: isoPlus(50), energy: "light", pace: "slow", memo: "時間がある時に少しずつ。学期末までに読み切る。" }),
       node("構成を考える", { energy: "normal" }),
@@ -165,6 +165,19 @@ export default function TreeTasks() {
   async function signOut() { await supabase.auth.signOut(); setTree(SEED); setLoaded(false); }
   useEffect(() => { if (focusId && inputs.current[focusId]) { const el = inputs.current[focusId]; el.focus(); el.setSelectionRange(el.value.length, el.value.length); setFocusId(null); } }, [focusId, tree]);
 
+  // 引き出しを外側クリックで閉じる（広い画面＝パソコンのみ。スマホは⋯で閉じる）
+  useEffect(() => {
+    if (!openId) return;
+    const onDown = (e) => {
+      if (window.innerWidth <= 560) return;
+      const t = e.target;
+      if (t.closest && (t.closest(".tt-drawer") || t.closest(".tt-more"))) return;
+      setOpenId(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [openId]);
+
   const visible = useMemo(() => flattenVisible(tree), [tree]);
   const onKey = useCallback((e, id) => {
     const el = e.target;
@@ -179,6 +192,7 @@ export default function TreeTasks() {
   const setTitle = (id, title) => setTree((t) => mapNode(t, id, (n) => ({ ...n, title })));
   const setMemo = (id, memo) => setTree((t) => mapNode(t, id, (n) => ({ ...n, memo })));
   const setEnergy = (id, v) => setTree((t) => mapNode(t, id, (n) => ({ ...n, energy: v })));
+  const setEstimate = (id, v) => setTree((t) => mapNode(t, id, (n) => ({ ...n, estimate: v })));
   const setPace = (id, v) => setTree((t) => mapNode(t, id, (n) => ({ ...n, pace: v })));
   const setRecur = (id, r) => setTree((t) => mapNode(t, id, (n) => ({ ...n, recur: r })));
   const setAppear = (id, text) => { const { deadline } = parseDeadline(text); setTree((t) => mapNode(t, id, (n) => ({ ...n, appearOn: deadline }))); };
@@ -224,6 +238,12 @@ export default function TreeTasks() {
             <button key={v} className={`tt-en-btn tt-en-btn--${v}${n.energy===v?" on":""}`} onClick={() => setEnergy(n.id, n.energy===v?null:v)}>{l}</button>
           ))}
         </div>
+      </div>
+      <div className="tt-drawer-field">
+        <label>所要時間</label>
+        <input defaultValue={n.estimate || ""} placeholder="30分 ／ 2時間 など"
+          onBlur={(e) => setEstimate(n.id, e.target.value.trim())}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setEstimate(n.id, e.target.value.trim()); e.target.blur(); } }} />
       </div>
       <div className="tt-drawer-field">
         <label className="tt-pace"><input type="checkbox" checked={n.pace === "slow"} onChange={(e) => setPace(n.id, e.target.checked ? "slow" : "normal")} /> ゆっくり進める（急ぎではない・期日まで少しずつ）</label>
@@ -280,6 +300,7 @@ export default function TreeTasks() {
             onChange={(e) => setTitle(n.id, e.target.value)} onKeyDown={(e) => onKey(e, n.id)} />
           {future && <span className="tt-future-when" title="この日から通常表示になります">{shortMD(n.appearOn)}に出現</span>}
           {isLeaf && n.energy && <span className={`tt-en tt-en--${n.energy}`} title={`気力 ${EN[n.energy].jp}`}>{EN[n.energy].jp}</span>}
+          {isLeaf && n.estimate && <span className="tt-est" title={`所要 ${n.estimate}`}>⏱{n.estimate}</span>}
           {n.recur && <span className="tt-rc" title="くりかえし">↻{n.recur.every > 1 ? n.recur.every : ""}{UNIT_JP[n.recur.unit]}</span>}
           {n.pace === "slow" && <span className="tt-slow-chip">ゆっくり</span>}
           {n.tags.length > 0 && <span className="tt-tags">{n.tags.map((t) => <span className="tt-tag" key={t}>{t}</span>)}</span>}
@@ -331,6 +352,7 @@ export default function TreeTasks() {
           <div className="tt-leafrow-title">
             {n.title || "（無題）"}
             {n.energy && <span className={`tt-en tt-en--${n.energy}`}>{EN[n.energy].jp}</span>}
+            {n.estimate && <span className="tt-est">⏱{n.estimate}</span>}
             {n.recur && <span className="tt-rc">↻{n.recur.every > 1 ? n.recur.every : ""}{UNIT_JP[n.recur.unit]}</span>}
             {n.scheduled && !n.done && <span className="tt-sched-badge">予定済み</span>}
             {n.tags.map((t) => <span className="tt-tag" key={t}>{t}</span>)}
@@ -520,6 +542,7 @@ const css = `
 .tt-en--normal{ background:var(--w-normal); color:#fff; }
 .tt-en--light{ background:transparent; border:1.5px solid var(--w-light); color:var(--muted); }
 .tt-rc{ flex:0 0 auto; font-family:ui-monospace,monospace; font-size:10px; color:var(--leaf); background:var(--leaf-soft); border-radius:999px; padding:2px 7px; white-space:nowrap; }
+.tt-est{ flex:0 0 auto; font-family:ui-monospace,monospace; font-size:10px; color:var(--muted); background:var(--paper); border:1px solid var(--line); border-radius:999px; padding:2px 7px; white-space:nowrap; }
 .tt-slow-chip{ flex:0 0 auto; font-size:10px; color:var(--slow); background:var(--slow-soft); border-radius:999px; padding:2px 8px; white-space:nowrap; }
 
 .tt-tags{ display:inline-flex; gap:4px; flex:0 1 auto; flex-wrap:wrap; }
