@@ -655,21 +655,19 @@ const css = `
 /* ===== スマホ対応：横スクロールをなくし、⋯ を必ず画面内に ===== */
 @media (max-width:560px){
   .tt-root{ padding:20px 12px 40px; }
-  /* 行を折り返し可能にして、はみ出しをなくす */
-  .tt-row{ flex-wrap:wrap; row-gap:4px; padding:5px 0; }
-  /* タイトル入力を1行目で最大幅に。残りのバッジ類は2行目へ自然に折り返す */
-  .tt-title{ flex:1 1 100%; order:1; min-width:0; font-size:16px; }
-  /* 行頭のボタン類（開閉・完了・予定）は1行目の左に残す */
-  .tt-tw, .tt-leaf, .tt-done, .tt-sched{ order:0; }
-  /* ⋯ は1行目の右端に固定。常に画面内に見える */
-  .tt-more{ order:0; margin-left:auto; }
-  /* バッジ・締切・タグ・進捗は2行目に回す（横スクロール不要に） */
-  .tt-en, .tt-rc, .tt-slow-chip, .tt-tags, .tt-dl, .tt-memo-dot, .tt-prog, .tt-future-when{ order:2; }
-  .tt-tags{ flex-basis:auto; }
-  /* 引き出し（⋯の中身）を画面幅に合わせて余裕を持たせる */
+  /* 折り返さず1行を保つ。長いタイトルは文字側を縮める＝枝とマークが必ず揃う */
+  .tt-row{ flex-wrap:nowrap; padding:4px 0; }
+  .tt-title{ flex:1 1 auto; min-width:0; font-size:16px; }
+  /* ⋯ は常に右端・画面内に固定 */
+  .tt-more{ flex:0 0 auto; margin-left:auto; }
+  /* 省スペースのため、ツリー行ではタグとメモ点を隠す（⋯の中で編集可・締切順では表示） */
+  .tt-row .tt-tags, .tt-row .tt-memo-dot{ display:none; }
+  /* 1行ぶん背が高くなるので、枝の終点を行の中心に合わせ直す */
+  .tt-children > .tt-node::after{ top:20px; }
+  .tt-children > .tt-node:last-child::before{ height:20px; }
+  /* 引き出しは画面幅に合わせて余裕を持たせる */
   .tt-drawer{ margin-left:12px; }
   .tt-drawer-acts button{ flex:1 1 auto; min-width:88px; text-align:center; }
-  /* 締切順ビューも詰まらないように */
   .tt-leafrow-dl{ text-align:left; }
 }
 `;
