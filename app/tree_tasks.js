@@ -749,8 +749,8 @@ const css = `
 .tt-day-istoday{ font-size:10px; color:var(--leaf); background:var(--leaf-soft); border-radius:999px; padding:2px 7px; }
 .tt-day-add{ margin-left:auto; border:0; background:var(--ink); color:#fff; border-radius:9px; padding:9px 14px; font-size:13px; cursor:pointer; font-family:inherit; }
 .tt-day-add:hover{ filter:brightness(1.12); }
-.tt-day-split{ display:flex; gap:14px; align-items:flex-start; }
-.tt-day-side{ flex:0 0 360px; max-height:72vh; overflow-y:auto; overflow-x:hidden; border:1px solid var(--line); border-radius:14px; background:var(--surface); padding:14px 16px; }
+.tt-day-split{ display:flex; gap:14px; align-items:flex-start; width:100%; }
+.tt-day-side{ flex:4 1 0; min-width:260px; max-width:560px; max-height:72vh; overflow-y:auto; overflow-x:hidden; border:1px solid var(--line); border-radius:14px; background:var(--surface); padding:14px 16px; }
 .tt-day-side-cap{ font-family:ui-monospace,monospace; font-size:10px; letter-spacing:.06em; color:var(--muted); margin-bottom:8px; }
 .tt-snode{ }
 .tt-schildren{ margin-left:7px; padding-left:11px; border-left:1px solid var(--line); }
@@ -760,13 +760,14 @@ const css = `
 .tt-srow.leaf:hover{ background:var(--leaf-soft); }
 .tt-sdot{ flex:0 0 auto; width:7px; height:7px; border-radius:0 50% 50% 50%; background:var(--leaf); transform:rotate(45deg); }
 .tt-stitle{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.tt-root--wide{ max-width:96vw; }
+.tt-root--wide{ box-sizing:border-box; }
+@media (min-width:761px){ .tt-root--wide{ width:95vw; max-width:1600px; } }
 .tt-day-side{ }
 .tt-tree--side{ border:0; padding:0; background:transparent; }
 .tt-tree--side .tt-row{ flex-wrap:nowrap; }
 .tt-tree--side .tt-title{ min-width:0; }
 .tt-tree--side .tt-tags, .tt-tree--side .tt-memo-dot, .tt-tree--side .tt-prog{ display:none; }
-.tt-timeline-wrap{ flex:1 1 auto; min-width:0; max-height:72vh; overflow-y:auto; border:1px solid var(--line); border-radius:14px; background:var(--surface); }
+.tt-timeline-wrap{ flex:6 1 0; min-width:0; max-height:72vh; overflow-y:auto; border:1px solid var(--line); border-radius:14px; background:var(--surface); }
 @media (max-width:760px){
   .tt-day-side{ display:none; }
   .tt-timeline-wrap{ width:100%; }
