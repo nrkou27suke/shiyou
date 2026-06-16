@@ -508,6 +508,13 @@ export default function TreeTasks() {
               <button className="tt-addroot" onClick={addRoot}>＋ 大きな目標を追加</button>
             </div>
           </div>
+          <div className="tt-day-due">
+            <div className="tt-day-side-cap">締切順</div>
+            {dated.length > 0 && <div className="tt-due-group">{dated.map((l) => <LeafRow key={l.node.id} l={l} />)}</div>}
+            {slow.length > 0 && <div className="tt-due-group tt-due-group--slow"><div className="tt-due-cap">ゆっくり進める</div>{slow.map((l) => <LeafRow key={l.node.id} l={l} />)}</div>}
+            {noted.length > 0 && <div className="tt-due-group"><div className="tt-due-cap">日付未定</div>{noted.map((l) => <LeafRow key={l.node.id} l={l} />)}</div>}
+            {dated.length === 0 && slow.length === 0 && noted.length === 0 && <p className="tt-tip">締切のある葉はまだありません。</p>}
+          </div>
           <div className="tt-timeline-wrap" ref={tlRef}>
             <div className="tt-timeline">
               {Array.from({ length: 24 }).map((_, h) => (
@@ -764,7 +771,7 @@ const css = `
 .tt-day-add{ margin-left:auto; border:0; background:var(--ink); color:#fff; border-radius:9px; padding:9px 14px; font-size:13px; cursor:pointer; font-family:inherit; }
 .tt-day-add:hover{ filter:brightness(1.12); }
 .tt-day-split{ display:flex; gap:14px; align-items:flex-start; width:100%; }
-.tt-day-side{ flex:4 1 0; min-width:260px; max-width:560px; max-height:72vh; overflow-y:auto; overflow-x:hidden; border:1px solid var(--line); border-radius:14px; background:var(--surface); padding:14px 16px; }
+.tt-day-side{ flex:4 1 0; min-width:240px; max-width:560px; max-height:72vh; overflow-y:auto; overflow-x:hidden; border:1px solid var(--line); border-radius:14px; background:var(--surface); padding:14px 16px; }
 .tt-day-side-cap{ font-family:ui-monospace,monospace; font-size:10px; letter-spacing:.06em; color:var(--muted); margin-bottom:8px; }
 .tt-snode{ }
 .tt-schildren{ margin-left:7px; padding-left:11px; border-left:1px solid var(--line); }
@@ -781,9 +788,14 @@ const css = `
 .tt-tree--side .tt-row{ flex-wrap:nowrap; }
 .tt-tree--side .tt-title{ min-width:0; }
 .tt-tree--side .tt-tags, .tt-tree--side .tt-memo-dot, .tt-tree--side .tt-prog{ display:none; }
-.tt-timeline-wrap{ flex:6 1 0; min-width:0; max-height:72vh; overflow-y:auto; border:1px solid var(--line); border-radius:14px; background:var(--surface); }
+.tt-day-due{ flex:3 1 0; min-width:210px; max-height:72vh; overflow-y:auto; border:1px solid var(--line); border-radius:14px; background:var(--surface); padding:14px 14px; display:flex; flex-direction:column; gap:10px; }
+.tt-day-due .tt-due-group{ border:0; padding:0; background:transparent; }
+.tt-day-due .tt-due-group--slow{ border:0; background:transparent; }
+.tt-day-due .tt-leafrow{ padding:9px 0; }
+.tt-day-due .tt-leafrow-title{ font-size:13px; }
+.tt-timeline-wrap{ flex:3 1 0; min-width:0; max-height:72vh; overflow-y:auto; border:1px solid var(--line); border-radius:14px; background:var(--surface); }
 @media (max-width:760px){
-  .tt-day-side{ display:none; }
+  .tt-day-side, .tt-day-due{ display:none; }
   .tt-timeline-wrap{ width:100%; }
 }
 .tt-timeline{ position:relative; height:1440px; margin:0 8px 0 50px; }
