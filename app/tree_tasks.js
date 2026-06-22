@@ -129,6 +129,14 @@ export default function TreeTasks() {
   const [help, setHelp] = useState(false);
   const [toast, setToast] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const treeRef = useRef(tree); treeRef.current = tree;
+  const undoStack = useRef([]);
+  const redoStack = useRef([]);
+  const baseRef = useRef(null);
+  const timeTravel = useRef(false);
+  const pushTimer = useRef(null);
+  const [histTick, setHistTick] = useState(0);
+  const bumpHist = () => setHistTick((x) => x + 1);
   const inputs = useRef({});
   const tlRef = useRef(null);
   const flash = (m) => { setToast(m); setTimeout(() => setToast(""), 2200); };
@@ -156,6 +164,7 @@ export default function TreeTasks() {
     (async () => {
       const { tree: t, schedule: sch } = await loadData(session.user.id);
       const hasTree = t && Array.isArray(t) && t.length;
+      undoStack.current = []; redoStack.current = []; baseRef.current = null;
       setTree(hasTree ? t : SEED);
       setSchedule(sch && typeof sch === "object" ? sch : {});
       if (!hasTree) await saveData(session.user.id, SEED, sch || {});
@@ -239,6 +248,58 @@ export default function TreeTasks() {
   const move = (id, dir) => setTree((t) => moveNode(t, id, dir));
   const indent = (id) => setTree((t) => indentNode(t, id));
   const outdent = (id) => setTree((t) => outdentNode(t, id));
+
+  // ===== 元に戻す / やり直し（Ctrl+Z / Ctrl+Y）=====
+  const HIST_MAX = 100;
+  function commitBurst() {
+    if (pushTimer.current) { clearTimeout(pushTimer.current); pushTimer.current = null; }
+    if (baseRef.current !== null && baseRef.current !== treeRef.current) {
+      undoStack.current.push(baseRef.current);
+      if (undoStack.current.length > HIST_MAX) undoStack.current.shift();
+      redoStack.current = [];
+      baseRef.current = treeRef.current;
+      bumpHist();
+    }
+  }
+  useEffect(() => {
+    if (!loaded) return;
+    if (timeTravel.current) { timeTravel.current = false; baseRef.current = tree; return; }
+    if (baseRef.current === null) { baseRef.current = tree; return; }
+    if (pushTimer.current) clearTimeout(pushTimer.current);
+    pushTimer.current = setTimeout(commitBurst, 350);
+  }, [tree, loaded]);
+  function undo() {
+    commitBurst();
+    if (undoStack.current.length === 0) { flash("これ以上戻せません"); return; }
+    const prev = undoStack.current.pop();
+    redoStack.current.push(treeRef.current);
+    timeTravel.current = true;
+    baseRef.current = prev;
+    setOpenId(null);
+    setTree(prev);
+    bumpHist();
+    flash("元に戻しました");
+  }
+  function redo() {
+    if (redoStack.current.length === 0) { flash("やり直せません"); return; }
+    const nxt = redoStack.current.pop();
+    undoStack.current.push(treeRef.current);
+    timeTravel.current = true;
+    baseRef.current = nxt;
+    setOpenId(null);
+    setTree(nxt);
+    bumpHist();
+    flash("やり直しました");
+  }
+  useEffect(() => {
+    const onKey = (e) => {
+      const k = (e.key || "").toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && k === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if ((e.ctrlKey || e.metaKey) && (k === "y" || (k === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [loaded]);
 
   const tagsList = useMemo(() => [...allTags(tree)], [tree]);
 
@@ -457,6 +518,8 @@ export default function TreeTasks() {
           <button className={view === "day" ? "on" : ""} onClick={() => setView("day")}>日割</button>
         </div>
         <div className="tt-bar-actions">
+          <button className="tt-chip-btn tt-icon-btn" onClick={undo} disabled={undoStack.current.length === 0} aria-label="元に戻す" title="元に戻す (Ctrl+Z)">↩</button>
+          <button className="tt-chip-btn tt-icon-btn" onClick={redo} disabled={redoStack.current.length === 0} aria-label="やり直し" title="やり直し (Ctrl+Y)">↪</button>
           <button className={`tt-chip-btn${hideDone ? " on" : ""}`} onClick={() => setHideDone((v) => !v)}>完了を隠す</button>
           {view === "tree" && <>
             <button className="tt-chip-btn" onClick={() => setTree((t) => setAllCollapsed(t, true))}>すべて閉じる</button>
@@ -616,6 +679,9 @@ const css = `
 .tt-chip-btn{ border:1px solid var(--line); background:var(--surface); color:var(--muted); border-radius:9px; padding:7px 12px; font-size:12px; cursor:pointer; font-family:inherit; }
 .tt-chip-btn:hover{ border-color:var(--leaf); color:var(--ink); }
 .tt-chip-btn.on{ background:var(--leaf-soft); border-color:var(--leaf); color:var(--leaf); }
+.tt-icon-btn{ font-size:15px; line-height:1; padding:7px 11px; }
+.tt-icon-btn:disabled{ opacity:.32; cursor:default; border-color:var(--line); color:var(--muted); }
+.tt-icon-btn:disabled:hover{ border-color:var(--line); color:var(--muted); }
 
 .tt-tree{ background:var(--surface); border:1px solid var(--line); border-radius:15px; padding:12px 14px; }
 .tt-children{ position:relative; margin-left:11px; padding-left:21px; }
