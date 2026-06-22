@@ -220,7 +220,6 @@ export default function TreeTasks() {
     if (e.key === "Enter") { e.preventDefault(); const f = node(""); setTree((t) => addSiblingAfter(t, id, f)); setFocusId(f.id); }
     else if (e.key === "Tab" && !e.shiftKey) { e.preventDefault(); setTree((t) => indentNode(t, id)); setFocusId(id); }
     else if (e.key === "Tab" && e.shiftKey) { e.preventDefault(); setTree((t) => outdentNode(t, id)); setFocusId(id); }
-    else if (e.key === "Backspace" && el.value === "") { e.preventDefault(); const i = visible.indexOf(id); const p = i > 0 ? visible[i-1] : null; setTree((t) => removeNode(t, id)); if (p) setFocusId(p); }
     else if (e.key === "ArrowUp") { e.preventDefault(); const i = visible.indexOf(id); if (i > 0) setFocusId(visible[i-1]); }
     else if (e.key === "ArrowDown") { e.preventDefault(); const i = visible.indexOf(id); if (i < visible.length-1) setFocusId(visible[i+1]); }
   }, [visible]);
@@ -239,7 +238,7 @@ export default function TreeTasks() {
     if (n && n.recur && !n.done) { const next = advance(n.deadline, n.recur); setTree((t) => mapNode(t, id, (x) => ({ ...x, deadline: next, done: false, scheduled: false }))); flash(`「${n.title || "タスク"}」完了。次は ${shortMD(next)}`); }
     else setTree((t) => mapNode(t, id, (x) => ({ ...x, done: !x.done })));
   };
-  const addChildTo = (id) => { const f = node(""); setTree((t) => addChild(t, id, f)); setFocusId(f.id); };
+  const addChildTo = (id) => { const f = node(""); setTree((t) => addChild(t, id, f)); setOpenId(null); setFocusId(f.id); };
   const del = (id) => { setTree((t) => removeNode(t, id)); if (openId === id) setOpenId(null); };
   const commitDeadline = (id, text) => setTree((t) => mapNode(t, id, (n) => ({ ...n, ...parseDeadline(text) })));
   const addTag = (id, tag) => { const v = tag.trim(); if (!v) return; setTree((t) => mapNode(t, id, (n) => ({ ...n, tags: n.tags.includes(v) ? n.tags : [...n.tags, v] }))); };
