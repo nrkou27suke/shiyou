@@ -93,17 +93,23 @@ const timeToMin = (t) => { const [h,m] = (t||"0:0").split(":").map(Number); retu
 
 async function loadData(userId) {
   try {
-    const { data, error } = await supabase.from("trees").select("tree, schedule").eq("user_id", userId).maybeSingle();
+    const { data, error } = await supabase.from("trees").select("tree, schedule, templates").eq("user_id", userId).maybeSingle();
     if (error) {
-      const r2 = await supabase.from("trees").select("tree").eq("user_id", userId).maybeSingle();
-      return { tree: r2.data ? r2.data.tree : null, schedule: {} };
+      const r2 = await supabase.from("trees").select("tree, schedule").eq("user_id", userId).maybeSingle();
+      if (!r2.error) return { tree: r2.data ? r2.data.tree : null, schedule: (r2.data && r2.data.schedule) ? r2.data.schedule : {}, templates: [] };
+      const r3 = await supabase.from("trees").select("tree").eq("user_id", userId).maybeSingle();
+      return { tree: r3.data ? r3.data.tree : null, schedule: {}, templates: [] };
     }
-    return { tree: data ? data.tree : null, schedule: (data && data.schedule) ? data.schedule : {} };
-  } catch (e) { console.error(e); return { tree: null, schedule: {} }; }
+    return {
+      tree: data ? data.tree : null,
+      schedule: (data && data.schedule) ? data.schedule : {},
+      templates: (data && Array.isArray(data.templates)) ? data.templates : [],
+    };
+  } catch (e) { console.error(e); return { tree: null, schedule: {}, templates: [] }; }
 }
-async function saveData(userId, t, sched) {
+async function saveData(userId, t, sched, tpls) {
   try {
-    await supabase.from("trees").upsert({ user_id: userId, tree: t, schedule: sched, updated_at: new Date().toISOString() });
+    await supabase.from("trees").upsert({ user_id: userId, tree: t, schedule: sched, templates: tpls, updated_at: new Date().toISOString() });
   } catch (e) { console.error(e); }
 }
 
@@ -119,6 +125,9 @@ export default function TreeTasks() {
   const [schedule, setSchedule] = useState({});
   const [dayDate, setDayDate] = useState(todayISO());
   const [editEvt, setEditEvt] = useState(null);
+  const [templates, setTemplates] = useState([]);
+  const [tplOpen, setTplOpen] = useState(false);
+  const [tplNameInput, setTplNameInput] = useState("");
   const [view, setView] = useState("tree");
   const [focusId, setFocusId] = useState(null);
   const [openId, setOpenId] = useState(null);
@@ -162,12 +171,13 @@ export default function TreeTasks() {
   useEffect(() => {
     if (!session) { setLoaded(false); return; }
     (async () => {
-      const { tree: t, schedule: sch } = await loadData(session.user.id);
+      const { tree: t, schedule: sch, templates: tpls } = await loadData(session.user.id);
       const hasTree = t && Array.isArray(t) && t.length;
       undoStack.current = []; redoStack.current = []; baseRef.current = null;
       setTree(hasTree ? t : SEED);
       setSchedule(sch && typeof sch === "object" ? sch : {});
-      if (!hasTree) await saveData(session.user.id, SEED, sch || {});
+      setTemplates(Array.isArray(tpls) ? tpls : []);
+      if (!hasTree) await saveData(session.user.id, SEED, sch || {}, tpls || []);
       setLoaded(true);
     })();
   }, [session]);
@@ -175,9 +185,9 @@ export default function TreeTasks() {
   // 変更をクラウドへ保存（少し待ってまとめて保存）
   useEffect(() => {
     if (!loaded || !session) return;
-    const id = setTimeout(() => { saveData(session.user.id, tree, schedule); }, 600);
+    const id = setTimeout(() => { saveData(session.user.id, tree, schedule, templates); }, 600);
     return () => clearTimeout(id);
-  }, [tree, schedule, loaded, session]);
+  }, [tree, schedule, templates, loaded, session]);
 
   // 日割タブを開いたら朝7時へスクロール
   useEffect(() => { if (view === "day" && tlRef.current) tlRef.current.scrollTop = 7 * 60; }, [view, dayDate]);
@@ -308,6 +318,31 @@ export default function TreeTasks() {
   function openNewEvent(startMin, text) { const sM = startMin != null ? startMin : 9 * 60; setEditEvt({ id: uid(), start: minToTime(sM), end: minToTime(Math.min(sM + 30, 24 * 60)), text: text || "", isNew: true }); }
   function commitEvent() { if (!editEvt) return; let a = timeToMin(editEvt.start), b = timeToMin(editEvt.end); if (b <= a) b = Math.min(a + 15, 24 * 60); upsertEvent({ id: editEvt.id, start: minToTime(a), end: minToTime(b), text: (editEvt.text || "").trim() }); setEditEvt(null); }
   function toggleEvtCal(ev) { upsertEvent({ ...ev, cal: !ev.cal }); }
+
+  // ===== テンプレート：今の日を保存 / 保存済みを適用 =====
+  function saveAsTemplate() {
+    const name = tplNameInput.trim();
+    if (!name) return;
+    if (dayEvents.length === 0) { flash("この日には予定がありません"); return; }
+    const snapshot = dayEvents.map((e) => ({ start: e.start, end: e.end, text: e.text }));
+    setTemplates((ts) => [...ts, { id: uid(), name, events: snapshot }]);
+    setTplNameInput("");
+    flash("テンプレートを保存しました");
+  }
+  function deleteTemplate(id) { setTemplates((ts) => ts.filter((t) => t.id !== id)); }
+  function applyTemplate(tpl) {
+    const doApply = () => {
+      const fresh = tpl.events.map((e) => ({ id: uid(), start: e.start, end: e.end, text: e.text, cal: false }));
+      setSchedule((sc) => ({ ...sc, [dayDate]: fresh }));
+      setTplOpen(false);
+      flash(`「${tpl.name}」を適用しました`);
+    };
+    if (dayEvents.length > 0) {
+      if (window.confirm(`この日の予定（${dayEvents.length}件）を「${tpl.name}」で上書きします。よろしいですか？`)) doApply();
+    } else {
+      doApply();
+    }
+  }
 
   const Drawer = ({ n }) => (
     <div className="tt-drawer">
@@ -560,6 +595,7 @@ export default function TreeTasks() {
             <button className="tt-day-nav" onClick={() => setDayDate(shiftDate(dayDate, -1))} aria-label="前の日">‹</button>
             <button className="tt-day-today" onClick={() => setDayDate(todayISO())}>{dateLabel(dayDate)}{dayDate === todayISO() && <span className="tt-day-istoday">今日</span>}</button>
             <button className="tt-day-nav" onClick={() => setDayDate(shiftDate(dayDate, 1))} aria-label="次の日">›</button>
+            <button className="tt-day-tpl" onClick={() => setTplOpen(true)}>テンプレート</button>
             <button className="tt-day-add" onClick={() => openNewEvent(null)}>＋ 予定を追加</button>
           </div>
           <div className="tt-day-split">
@@ -627,6 +663,43 @@ export default function TreeTasks() {
         </div>
       )}
 
+      {tplOpen && (
+        <div className="tt-modal" onClick={() => setTplOpen(false)}>
+          <div className="tt-modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2 className="tt-modal-title">テンプレート</h2>
+            <p className="tt-modal-sub">今日の日割りを名前をつけて保存したり、保存済みのものをこの日に適用できます。</p>
+
+            <div className="tt-tpl-save">
+              <label>今の日を保存（{dateLabel(dayDate)}・{dayEvents.length}件）</label>
+              <div className="tt-tpl-save-row">
+                <input className="tt-evt-input" value={tplNameInput} placeholder="例：平日ルーティン"
+                  onChange={(e) => setTplNameInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") saveAsTemplate(); }} />
+                <button className="tt-tpl-save-btn" onClick={saveAsTemplate} disabled={!tplNameInput.trim() || dayEvents.length === 0}>保存</button>
+              </div>
+            </div>
+
+            <div className="tt-tpl-list">
+              {templates.length === 0 && <p className="tt-tip">まだテンプレートはありません。</p>}
+              {templates.map((tpl) => (
+                <div className="tt-tpl-row" key={tpl.id}>
+                  <div className="tt-tpl-info">
+                    <span className="tt-tpl-name">{tpl.name}</span>
+                    <span className="tt-tpl-count">{tpl.events.length}件の予定</span>
+                  </div>
+                  <div className="tt-tpl-row-acts">
+                    <button className="tt-tpl-apply" onClick={() => applyTemplate(tpl)}>この日に適用</button>
+                    <button className="tt-tpl-del" onClick={() => deleteTemplate(tpl.id)} aria-label="テンプレートを削除">🗑</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button className="tt-modal-close" onClick={() => setTplOpen(false)}>閉じる</button>
+          </div>
+        </div>
+      )}
+
       {help && (
         <div className="tt-modal" onClick={() => setHelp(false)}>
           <div className="tt-modal-card" onClick={(e) => e.stopPropagation()}>
@@ -640,6 +713,7 @@ export default function TreeTasks() {
               <div className="tt-modal-item"><span className="tt-modal-ic">🌱</span><div><b>ゆっくり進める</b><br/>急ぎではないが期日までに少しずつ進めたいもの。締切リストとは分けて、残り日数つきで並びます。</div></div>
               <div className="tt-modal-item"><span className="tt-modal-ic">✓</span><div><b>進める</b><br/>葉のチェックで完了。📅 はカレンダーに入れたら押す印。「予定に入れたが、まだやっていない」を区別できます。</div></div>
               <div className="tt-modal-item"><span className="tt-modal-ic">⇅</span><div><b>締切順で見る</b><br/>「締切順」タブで葉だけを締切順に。検索・気力・タグで絞り込めます。予定に落とすのは、あなたが。</div></div>
+              <div className="tt-modal-item"><span className="tt-modal-ic">⧉</span><div><b>日割りテンプレート</b><br/>「日割」タブの「テンプレート」から、今の日を名前をつけて保存。別の日に開いて「この日に適用」を押せば、同じ予定を再現できます。</div></div>
               <div className="tt-modal-item"><span className="tt-modal-ic">⤓</span><div><b>保存とアプリ化</b><br/>変更はこの端末に自動保存。Web公開後はブラウザの「ホーム画面に追加」で、アプリのように全画面で使えます。</div></div>
             </div>
             <button className="tt-modal-close" onClick={() => setHelp(false)}>はじめる</button>
@@ -833,8 +907,26 @@ const css = `
 .tt-day-nav:hover{ border-color:var(--leaf); }
 .tt-day-today{ border:1px solid var(--line); background:var(--surface); border-radius:9px; padding:8px 14px; font-size:14px; font-weight:600; cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:8px; color:var(--ink); }
 .tt-day-istoday{ font-size:10px; color:var(--leaf); background:var(--leaf-soft); border-radius:999px; padding:2px 7px; }
-.tt-day-add{ margin-left:auto; border:0; background:var(--ink); color:#fff; border-radius:9px; padding:9px 14px; font-size:13px; cursor:pointer; font-family:inherit; }
+.tt-day-tpl{ margin-left:auto; border:1px solid var(--line); background:var(--surface); color:var(--muted); border-radius:9px; padding:9px 14px; font-size:13px; cursor:pointer; font-family:inherit; }
+.tt-day-tpl:hover{ border-color:var(--leaf); color:var(--ink); }
+.tt-day-add{ border:0; background:var(--ink); color:#fff; border-radius:9px; padding:9px 14px; font-size:13px; cursor:pointer; font-family:inherit; }
 .tt-day-add:hover{ filter:brightness(1.12); }
+.tt-tpl-save{ border:1px solid var(--line); border-radius:12px; padding:14px; margin:14px 0; background:var(--paper); }
+.tt-tpl-save label{ font-family:ui-monospace,monospace; font-size:10px; letter-spacing:.06em; color:var(--muted); display:block; margin-bottom:8px; }
+.tt-tpl-save-row{ display:flex; gap:8px; }
+.tt-tpl-save-row .tt-evt-input{ flex:1; }
+.tt-tpl-save-btn{ flex:0 0 auto; border:0; background:var(--ink); color:#fff; border-radius:9px; padding:0 16px; font-size:13px; cursor:pointer; font-family:inherit; }
+.tt-tpl-save-btn:disabled{ opacity:.4; cursor:default; }
+.tt-tpl-list{ display:flex; flex-direction:column; gap:8px; max-height:32vh; overflow-y:auto; }
+.tt-tpl-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+.tt-tpl-info{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+.tt-tpl-name{ font-size:13.5px; font-weight:600; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tt-tpl-count{ font-size:11px; color:var(--muted); }
+.tt-tpl-row-acts{ flex:0 0 auto; display:flex; gap:6px; align-items:center; }
+.tt-tpl-apply{ border:1px solid var(--leaf); background:var(--leaf-soft); color:var(--leaf); border-radius:8px; padding:7px 12px; font-size:12.5px; cursor:pointer; font-family:inherit; white-space:nowrap; }
+.tt-tpl-apply:hover{ background:var(--leaf); color:#fff; }
+.tt-tpl-del{ border:1px solid var(--line); background:var(--surface); color:var(--muted); border-radius:8px; width:30px; height:30px; cursor:pointer; font-size:13px; }
+.tt-tpl-del:hover{ border-color:#c0645a; color:#c0645a; }
 .tt-day-split{ display:flex; gap:14px; align-items:flex-start; width:100%; }
 .tt-day-side{ flex:4 1 0; min-width:240px; max-width:560px; max-height:72vh; overflow-y:auto; overflow-x:hidden; border:1px solid var(--line); border-radius:14px; background:var(--surface); padding:14px 16px; }
 .tt-day-side-cap{ font-family:ui-monospace,monospace; font-size:10px; letter-spacing:.06em; color:var(--muted); margin-bottom:8px; }
@@ -914,4 +1006,4 @@ const css = `
   .tt-drawer-acts button{ flex:1 1 auto; min-width:88px; text-align:center; }
   .tt-leafrow-dl{ text-align:left; }
 }
-`;
+`;te
