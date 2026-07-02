@@ -1006,4 +1006,4 @@ const css = `
   .tt-drawer-acts button{ flex:1 1 auto; min-width:88px; text-align:center; }
   .tt-leafrow-dl{ text-align:left; }
 }
-`;te
+`;
